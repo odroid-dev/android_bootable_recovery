@@ -629,6 +629,73 @@ Value* SetProgressFn(const char* name, State* state,
   return StringValue(frac_str);
 }
 
+Value* WriteSparseImageFn(const char* name, State* state,
+  int argc, Expr* argv[]) {
+  if (argc != 3) {
+    return ErrorAbort(state, "%s() expects 3 args, got %d",
+            name, argc);
+  }
+
+  bool success = false;
+
+  // The one-argument version returns the contents of the file
+  // as the result.
+  char* zip_path;
+  Value* v = reinterpret_cast<Value*>(malloc(sizeof(Value)));
+  v->type = VAL_BLOB;
+  v->size = -1;
+  v->data = NULL;
+
+  char *ptnname;
+  char *dest_path;
+
+  if (ReadArgs(state, argv, 3, &zip_path, &ptnname, &dest_path) < 0) {
+    return NULL;
+  }
+
+  ZipArchive* za = ((UpdaterInfo*)(state->cookie))->package_zip;
+  const ZipEntry* entry = mzFindZipEntry(za, zip_path);
+  if (entry == NULL) {
+    printf("%s: no %s in package\n", name, zip_path);
+    goto done1;
+  }
+
+  v->size = mzGetZipEntryUncompLen(entry);
+  v->data = reinterpret_cast<char*>(malloc(v->size));
+  if (v->data == NULL) {
+    printf("%s: failed to allocate %ld bytes for %s\n",
+            name, (long)v->size, zip_path);
+    goto done1;
+  }
+
+  success = mzExtractZipEntryToBuffer(za, entry,
+          (unsigned char *)v->data);
+  if (!success) {
+    printf("%s: failed to extract %s to memory\n",
+            name, zip_path);
+    goto done1;
+  }
+
+  FILE* fd = fopen(dest_path, "wb");
+  if (fd == NULL) {
+    printf("%s: can't open %s for write: %s\n",
+            ptnname, dest_path, strerror(errno));
+    goto done1;
+  }
+  fclose(fd);
+
+  success = ExtractSparseToFile(state, v->data, dest_path);
+
+done1:
+  free(zip_path);
+  if (!success) {
+    free(v->data);
+    v->data = NULL;
+    v->size = -1;
+  }
+  return v;
+}
+
 Value* GetPropFn(const char* name, State* state, const std::vector<std::unique_ptr<Expr>>& argv) {
   if (argv.size() != 1) {
     return ErrorAbort(state, kArgsParsingFailure, "%s() expects 1 arg, got %zu", name, argv.size());
@@ -1021,6 +1088,8 @@ void RegisterInstallFunctions() {
 
   RegisterFunction("getprop", GetPropFn);
   RegisterFunction("file_getprop", FileGetPropFn);
+
+  RegisterFunction("write_sparse_image", WriteSparseImageFn);
 
   RegisterFunction("apply_patch", ApplyPatchFn);
   RegisterFunction("apply_patch_check", ApplyPatchCheckFn);

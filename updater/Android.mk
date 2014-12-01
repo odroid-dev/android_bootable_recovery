@@ -58,7 +58,8 @@ LOCAL_MODULE := libupdater
 
 LOCAL_SRC_FILES := \
     install.cpp \
-    blockimg.cpp
+    blockimg.cpp \
+    sparse.cpp
 
 LOCAL_C_INCLUDES := \
     $(LOCAL_PATH)/.. \
