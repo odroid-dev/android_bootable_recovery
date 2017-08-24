@@ -63,6 +63,7 @@
 #include "otautil/error_code.h"
 #include "otautil/print_sha1.h"
 #include "updater/updater.h"
+#include "sparse.h"
 
 // Send over the buffer to recovery though the command pipe.
 static void uiPrint(State* state, const std::string& buffer) {
@@ -676,13 +677,15 @@ Value* WriteSparseImageFn(const char* name, State* state,
     goto done1;
   }
 
-  FILE* fd = fopen(dest_path, "wb");
-  if (fd == NULL) {
-    printf("%s: can't open %s for write: %s\n",
-            ptnname, dest_path, strerror(errno));
-    goto done1;
+  {
+    FILE* fd = fopen(dest_path, "wb");
+    if (fd == NULL) {
+        printf("%s: can't open %s for write: %s\n",
+                ptnname, dest_path, strerror(errno));
+        goto done1;
+    }
+    fclose(fd);
   }
-  fclose(fd);
 
   success = ExtractSparseToFile(state, v->data, dest_path);
 
