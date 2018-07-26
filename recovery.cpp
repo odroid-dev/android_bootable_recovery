@@ -1672,6 +1672,16 @@ int main(int argc, char **argv) {
         set_retry_bootloader_message(retry_count + 1, args);
       }
 
+      if (strncmp(update_package, "/storage/emulated/", 18) == 0) {
+          int len = strlen(update_package);
+          char * modified_path = (char *)malloc(len);
+          strlcpy(modified_path, "/data/media/", len);
+          strlcat(modified_path, update_package + 18, len);
+          printf("(replacing path \"%s\" with \"%s\")\n",
+                  update_package, modified_path);
+          update_package = modified_path;
+      }
+
       status = install_package(update_package, &should_wipe_cache, TEMPORARY_INSTALL_FILE, true,
                                retry_count);
       if (status == INSTALL_SUCCESS && should_wipe_cache) {
