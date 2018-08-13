@@ -631,72 +631,66 @@ Value* SetProgressFn(const char* name, State* state,
 }
 
 Value* WriteSparseImageFn(const char* name, State* state,
-  int argc, Expr* argv[]) {
-  if (argc != 3) {
-    return ErrorAbort(state, "%s() expects 3 args, got %d",
-            name, argc);
+  const std::vector<std:::unique_ptr<Expr>>& argv) {
+  if (argv.size() != 3) {
+    return ErrorAbort(state, kArgsParsingFailure, "%s() expects 3 args, got %zu",
+            name, argv.size());
   }
 
-  bool success = false;
+  // The one-argument version returns the contents of the file as the result.
+  Value* v = new Value(VAL_INVALID, "");
 
-  // The one-argument version returns the contents of the file
-  // as the result.
-  char* zip_path;
-  Value* v = reinterpret_cast<Value*>(malloc(sizeof(Value)));
-  v->type = VAL_BLOB;
-  v->size = -1;
-  v->data = NULL;
+  std::vector<std::string> args;
+  if (!ReadArgs(state, argv, &args)) {
+    return ErrorAbort(state, kArgsParsingFailure, "%s() Failed to parse %zu args", name,
+            argv.size());
+  }
+  const std::string& zip_path = args[0];
+  const std::string& ptnname = args[1];
+  const std::string& dest_path = args[2];
 
-  char *ptnname;
-  char *dest_path;
-
-  if (ReadArgs(state, argv, 3, &zip_path, &ptnname, &dest_path) < 0) {
-    return NULL;
+  ZipArchiveHandle za = static_cast<UpdaterInfo*>(state->cookie)->package_zip;
+  ZipString path(zip_path.c_str());
+  ZipEntry entry;
+  if (FindEntry(za, path, &entry) != 0) {
+    return ErrorAbort(state, kPackageExtractFileFailure, "%s: no %s in package\n", name,
+            zip_path.c_str());
   }
 
-  ZipArchive* za = ((UpdaterInfo*)(state->cookie))->package_zip;
-  const ZipEntry* entry = mzFindZipEntry(za, zip_path);
-  if (entry == NULL) {
-    printf("%s: no %s in package\n", name, zip_path);
-    goto done1;
+  std::string buffer;
+  buffer.resize(entry.uncompressed_length);
+
+  int32_t ret = ExtractToMemory(za, &entry, reinterpret_cast<uint8_t*>(&buffer[0]), buffer.size());
+  if (ret != 0) {
+      return ErrorAbort(state, kPackageExtractFileFailure,
+              "%s: Failed to extract entry \"%s\" (%zu bytes) to memory: %s", name,
+              zip_path.c_str(), buffer.size(), ErrorCodeString(ret));
   }
 
-  v->size = mzGetZipEntryUncompLen(entry);
-  v->data = reinterpret_cast<char*>(malloc(v->size));
-  if (v->data == NULL) {
-    printf("%s: failed to allocate %ld bytes for %s\n",
-            name, (long)v->size, zip_path);
-    goto done1;
+  unique_fd fd(TEMP_FAILURE_RETRY(
+      ota_open(dest_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR)));
+  if (fd == -1) {
+    PLOG(ERROR) << ptnname << ": can't open " << dest_path << " for write";
+    return StringValue("");
   }
 
-  success = mzExtractZipEntryToBuffer(za, entry,
-          (unsigned char *)v->data);
-  if (!success) {
-    printf("%s: failed to extract %s to memory\n",
-            name, zip_path);
-    goto done1;
+  ret= ExtractSparseToFile(state, reinterpret_cast<unsigned char*>(&buffer[0]), fd);
+  if (ret != 0) {
+    LOG(ERROR) << ptnname << ": Failed to sparse entry \"" << zip_path << "\" ("
+               << entry.uncompressed_length << " bytes) to \"" << dest_path
+               << "\": " << ErrorCodeString(ret);
+    return StringValue("");
+  }
+  if (ota_fsync(fd) == -1) {
+    PLOG(ERROR) << "fsync of \"" << dest_path << "\" failed";
+    return StringValue("");
+  }
+  if (ota_close(fd) == -1) {
+    PLOG(ERROR) << "close of \"" << dest_path << "\" failed";
+    return StringValue("");
   }
 
-  {
-    FILE* fd = fopen(dest_path, "wb");
-    if (fd == NULL) {
-        printf("%s: can't open %s for write: %s\n",
-                ptnname, dest_path, strerror(errno));
-        goto done1;
-    }
-    fclose(fd);
-  }
-
-  success = ExtractSparseToFile(state, v->data, dest_path);
-
-done1:
-  free(zip_path);
-  if (!success) {
-    free(v->data);
-    v->data = NULL;
-    v->size = -1;
-  }
-  return v;
+  return new Value(VAL_BLOB, buffer);
 }
 
 Value* GetPropFn(const char* name, State* state, const std::vector<std::unique_ptr<Expr>>& argv) {

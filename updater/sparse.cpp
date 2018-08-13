@@ -85,7 +85,7 @@ typedef struct chunk_header {
 
 #define SPARSE_HEADER_MAJOR_VER 1
 #include <sys/statvfs.h>
-static int do_unsparse(int fd, char *source,
+static int do_unsparse(int fd, unsigned char *source,
         unsigned int sector)
 {
     sparse_header_t *header = (sparse_header_t *) source;
@@ -171,7 +171,7 @@ static int do_unsparse(int fd, char *source,
                         chunk->chunk_sz, header->blk_sz, sector, clen);
 
                 lseek64(fd, (off64_t)sector * blk_sz, SEEK_SET);
-                if (write(fd, source, (size_t)clen) != clen) {
+                if ((u64)write(fd, source, (size_t)clen) != clen) {
                     printf("sparse: block write to sector %d"
                             " of %llu bytes (%llu blkcnt) failed\n",
                             sector, clen, blkcnt);
@@ -213,25 +213,20 @@ static int do_unsparse(int fd, char *source,
     return 0;
 }
 
-bool  ExtractSparseToFile(State *state, char *image_start_ptr, char *name)
+bool  ExtractSparseToFile(State *state, unsigned char *image_start_ptr, int fd)
 {
     /* Check if we have sparse compressed image */
     if (((sparse_header_t *)image_start_ptr)->magic
             == SPARSE_HEADER_MAGIC) {
-        printf("fastboot: %s is in sparse format\n", name);
-
-        int fd = open(name, O_WRONLY);
+        printf("fastboot: start extract the sparse file\n");
 
         if (!do_unsparse(fd, image_start_ptr, 0)) {
-            printf("Writing sparsed: '%s' DONE!\n", name);
-            close(fd);
-            return 1;
+            printf("Writing sparsed: DONE!\n");
+            return 0;
         }
 
-        close(fd);
-
-        printf("Writing sparsed '%s' FAILED!\n", name);
+        printf("Writing sparsed FAILED!\n");
     }
 
-    return 0;
+    return 1; // TODO: set error code
 }

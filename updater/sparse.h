@@ -20,6 +20,8 @@
 #ifndef _UPDATER_SPARSE_H_
 #define _UPDATER_SPARSE_H_
 
-bool ExtractSparseToFile(State *state, char *image_start_ptr, char *name);
+#include "otafault/ota_io.h"
+
+bool ExtractSparseToFile(State *state, unsigned char *image_start_ptr, int fd);
 
 #endif
