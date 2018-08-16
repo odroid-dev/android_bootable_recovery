@@ -79,6 +79,9 @@ static const struct option OPTIONS[] = {
   { "retry_count", required_argument, NULL, 'n' },
   { "wipe_data", no_argument, NULL, 'w' },
   { "wipe_cache", no_argument, NULL, 'c' },
+#ifdef RECOVERY_HAS_PARAM
+  { "wipe_param", no_argument, NULL, 'P' },
+#endif /*RECOVERY_HAS_PARAM */
   { "show_text", no_argument, NULL, 't' },
   { "sideload", no_argument, NULL, 's' },
   { "sideload_auto_reboot", no_argument, NULL, 'a' },
@@ -111,6 +114,9 @@ static const char *DATA_ROOT = "/data";
 static const char* METADATA_ROOT = "/metadata";
 static const char *SDCARD_ROOT = "/sdcard";
 static const char *UDISK_ROOT = "/udisk";
+#ifdef RECOVERY_HAS_PARAM
+static const char *PARAM_ROOT = "/param";
+#endif
 static const char *TEMPORARY_LOG_FILE = "/tmp/recovery.log";
 static const char *TEMPORARY_INSTALL_FILE = "/tmp/last_install";
 static const char *LAST_KMSG_FILE = "/cache/recovery/last_kmsg";
@@ -765,6 +771,9 @@ static bool wipe_data(Device* device) {
       if (has_cache) {
         success &= erase_volume(CACHE_ROOT);
       }
+  #ifdef RECOVERY_HAS_PARAM
+        success &= erase_volume(PARAM_ROOT);
+  #endif
       if (volume_for_mount_point(METADATA_ROOT) != nullptr) {
         success &= erase_volume(METADATA_ROOT);
       }
@@ -799,6 +808,21 @@ static bool prompt_and_wipe_data(Device* device) {
       return wipe_data(device);
     }
   }
+}
+
+// Return true on success.
+static bool wipe_param(bool should_confirm, Device* device) {
+
+    if (should_confirm && !yes_no(device, "Wipe param?", "  THIS CAN NOT BE UNDONE!")) {
+        return false;
+    }
+
+    modified_flash = true;
+
+    ui->Print("\n-- Wiping param...\n");
+    bool success = erase_volume("/param");
+    ui->Print("Param wipe %s.\n", success ? "complete" : "failed");
+    return success;
 }
 
 // Return true on success.
@@ -1248,6 +1272,13 @@ static Device::BuiltinAction prompt_and_wait(Device* device, int status) {
         if (!ui->IsTextVisible()) return Device::NO_ACTION;
         break;
 
+#ifdef RECOVERY_HAS_PARAM
+      case Device::WIPE_PARAM:
+        wipe_param(ui->IsTextVisible(), device);
+        if (!ui->IsTextVisible()) return Device::NO_ACTION;
+        break;
+#endif
+
       case Device::APPLY_EXT:
         ext_update(device, should_wipe_cache);
         break;
@@ -1528,6 +1559,9 @@ int main(int argc, char **argv) {
   bool shutdown_after = false;
   int retry_count = 0;
   bool security_update = false;
+#ifdef RECOVERY_HAS_PARAM
+  int should_wipe_param = 0;
+#endif /* RECOVERY_HAS_PARAM */
 
   int arg;
   int option_index;
@@ -1565,6 +1599,9 @@ int main(int argc, char **argv) {
       case 'p':
         shutdown_after = true;
         break;
+#ifdef RECOVERY_HAS_PARAM
+        case 'P': should_wipe_param = 1; break;
+#endif /* RECOVERY_HAS_PARAM */
       case 'r':
         reason = optarg;
         break;
@@ -1717,6 +1754,14 @@ int main(int argc, char **argv) {
     }
   }
 
+#ifdef RECOVERY_HAS_PARAM
+    if (should_wipe_param) {
+      if (!wipe_param(false, device)) {
+        status = INSTALL_ERROR;;
+      }
+    }
+#endif /* RECOVERY_HAS_PARAM */
+
   if (should_wipe_data) {
     if (!wipe_data(device)) {
       status = INSTALL_ERROR;
@@ -1756,15 +1801,6 @@ int main(int argc, char **argv) {
     if (sideload_auto_reboot) {
       ui->Print("Rebooting automatically.\n");
     }
-  } else if (!just_exit) {
-    // If this is an eng or userdebug build, automatically turn on the text display if no command
-    // is specified. Note that this should be called before setting the background to avoid
-    // flickering the background image.
-    if (is_ro_debuggable()) {
-      ui->ShowText(true);
-    }
-    status = INSTALL_NONE;  // No command specified
-    ui->SetBackground(RecoveryUI::NO_COMMAND);
   }
 
   if (status == INSTALL_ERROR || status == INSTALL_CORRUPT) {
@@ -1782,7 +1818,9 @@ int main(int argc, char **argv) {
   //    without waiting.
   // 4. In all other cases, reboot the device. Therefore, normal users will observe the device
   //    reboot after it shows the "error" screen for 5s.
-  if ((status == INSTALL_NONE && !sideload_auto_reboot) || ui->IsTextVisible()) {
+  if (just_exit) {
+        after = Device::REBOOT;
+  } else if ((status == INSTALL_NONE && !sideload_auto_reboot) || ui->IsTextVisible()) {
     Device::BuiltinAction temp = prompt_and_wait(device, status);
     if (temp != Device::NO_ACTION) {
       after = temp;
