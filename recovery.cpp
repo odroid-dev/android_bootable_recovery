@@ -110,6 +110,7 @@ static const char *CACHE_ROOT = "/cache";
 static const char *DATA_ROOT = "/data";
 static const char* METADATA_ROOT = "/metadata";
 static const char *SDCARD_ROOT = "/sdcard";
+static const char *UDISK_ROOT = "/udisk";
 static const char *TEMPORARY_LOG_FILE = "/tmp/recovery.log";
 static const char *TEMPORARY_INSTALL_FILE = "/tmp/last_install";
 static const char *LAST_KMSG_FILE = "/cache/recovery/last_kmsg";
@@ -138,6 +139,8 @@ bool modified_flash = false;
 std::string stage;
 const char* reason = nullptr;
 struct selabel_handle* sehandle;
+
+extern void amlogic_get_args(std::vector<std::string>& args);
 
 /*
  * The recovery tool communicates with the main system through /cache files.
@@ -368,6 +371,9 @@ static std::vector<std::string> get_args(const int argc, char** const argv) {
       LOG(INFO) << "Got " << args.size() << " arguments from " << COMMAND_FILE;
     }
   }
+
+  //add get args from factory_update_param.aml
+  amlogic_get_args(args);
 
   // Write the arguments (excluding the filename in args[0]) back into the
   // bootloader control block. So the device will always boot into recovery to
@@ -991,6 +997,84 @@ static void choose_recovery_file(Device* device) {
   }
 }
 
+static int ext_update(Device* device, bool wipe_cache) {
+    int status = 0;
+    int found_upgrade = 0;
+    std::string  update_package;
+    /*const char** title_headers = NULL;
+    const char* headers[] = { "Confirm update?",
+                    "  THIS CAN NOT BE UNDONE.",
+                    "",
+                    NULL };*/
+    const char* items[] = { " ../",
+                    " Update from sdcard",
+                    " Update from udisk",
+                    NULL };
+
+    int chosen_item = get_menu_selection(nullptr, items, 1, 0, device);
+        if (chosen_item != 1 && chosen_item != 2) {
+        return 1;
+    }
+
+    switch (chosen_item) {
+        case 1:
+            // Some packages expect /cache to be mounted (eg,
+            // standard incremental packages expect to use /cache
+            // as scratch space).
+            ensure_path_mounted(CACHE_ROOT);
+            ensure_path_unmounted(SDCARD_ROOT); // umount, if pull card and then insert card
+            ensure_path_mounted(SDCARD_ROOT);
+            update_package = browse_directory(SDCARD_ROOT, device);
+            if (update_package.empty()) {
+                ui->Print("\n-- No package file selected.\n");
+                break;
+            }
+            found_upgrade = 1;
+            break;
+
+        case 2:
+            ensure_path_mounted(CACHE_ROOT);
+            ensure_path_unmounted(UDISK_ROOT);
+            ensure_path_mounted(UDISK_ROOT);
+            update_package = browse_directory(UDISK_ROOT, device);
+            if (update_package.empty()) {
+                ui->Print("\n-- No package file selected.\n");
+                break;
+            }
+            found_upgrade = 2;
+            break;
+    }
+
+    if (!found_upgrade) return 1;
+
+    ui->Print("\n-- Install %s ...\n", update_package.c_str());
+    set_sdcard_update_bootloader_message();
+    status = install_package(update_package.c_str(), &wipe_cache, TEMPORARY_INSTALL_FILE, true, 0);
+
+    if (status == INSTALL_SUCCESS && wipe_cache) {
+        ui->Print("\n-- Wiping cache (at package request)...\n");
+        if (erase_volume("/cache")) {
+            ui->Print("Cache wipe failed.\n");
+        } else {
+            ui->Print("Cache wipe complete.\n");
+        }
+    }
+
+    if (status >= 0) {
+        if (status != INSTALL_SUCCESS) {
+            ui->SetBackground(RecoveryUI::ERROR);
+            ui->Print("Installation aborted.\n");
+        } else if (!ui->IsTextVisible()) {
+            return 0;   // reboot if logs aren't visible
+        } else {
+            ui->Print("\nInstall from %s complete.\n",
+                (found_upgrade == 1) ? "sdcard" : "udisk");
+        }
+    }
+
+    return 1;
+}
+
 static void run_graphics_test() {
   // Switch to graphics screen.
   ui->ShowText(false);
@@ -1164,8 +1248,11 @@ static Device::BuiltinAction prompt_and_wait(Device* device, int status) {
         if (!ui->IsTextVisible()) return Device::NO_ACTION;
         break;
 
+      case Device::APPLY_EXT:
+        ext_update(device, should_wipe_cache);
+        break;
+
       case Device::APPLY_ADB_SIDELOAD:
-      case Device::APPLY_SDCARD:
         {
           bool adb = (chosen_action == Device::APPLY_ADB_SIDELOAD);
           if (adb) {
@@ -1618,7 +1705,9 @@ int main(int argc, char **argv) {
         }
       }
     }
-  } else if (should_wipe_data) {
+  }
+
+  if (should_wipe_data) {
     if (!wipe_data(device)) {
       status = INSTALL_ERROR;
     }
