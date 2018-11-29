@@ -662,14 +662,11 @@ Value* PackageExtractDirFn(const char* name, State* state,
 }
 
 Value* WriteSparseImageFn(const char* name, State* state,
-  const std::vector<std:::unique_ptr<Expr>>& argv) {
+        const std::vector<std::unique_ptr<Expr>>&argv) {
   if (argv.size() != 3) {
     return ErrorAbort(state, kArgsParsingFailure, "%s() expects 3 args, got %zu",
             name, argv.size());
   }
-
-  // The one-argument version returns the contents of the file as the result.
-  Value* v = new Value(VAL_INVALID, "");
 
   std::vector<std::string> args;
   if (!ReadArgs(state, argv, &args)) {

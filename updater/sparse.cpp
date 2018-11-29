@@ -213,7 +213,7 @@ static int do_unsparse(int fd, unsigned char *source,
     return 0;
 }
 
-bool  ExtractSparseToFile(State *state, unsigned char *image_start_ptr, int fd)
+bool  ExtractSparseToFile(State *state __unused, unsigned char *image_start_ptr, int fd)
 {
     /* Check if we have sparse compressed image */
     if (((sparse_header_t *)image_start_ptr)->magic
