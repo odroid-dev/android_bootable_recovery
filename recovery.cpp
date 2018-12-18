@@ -1524,7 +1524,7 @@ int main(int argc, char **argv) {
   bool show_text = false;
   bool sideload = false;
   bool sideload_auto_reboot = false;
-  bool just_exit = false;
+  bool just_exit = true;
   bool shutdown_after = false;
   int retry_count = 0;
   bool security_update = false;
