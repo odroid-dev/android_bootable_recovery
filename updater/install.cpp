@@ -858,7 +858,7 @@ Value* RunProgramFn(const char* name, State* state, const std::vector<std::uniqu
 
   LOG(INFO) << "about to run program [" << args2[0] << "] with " << argv.size() << " args";
 
-  pid_t child = fork();
+  pid_t child = vfork();
   if (child == 0) {
     execv(args2[0], args2);
     PLOG(ERROR) << "run_program: execv failed";
