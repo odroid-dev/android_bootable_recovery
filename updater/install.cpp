@@ -718,7 +718,9 @@ Value* WriteSparseImageFn(const char* name, State* state,
     return StringValue("");
   }
 
-  return new Value(VAL_BLOB, buffer);
+  buffer.clear();
+
+  return StringValue("");
 }
 
 Value* GetPropFn(const char* name, State* state, const std::vector<std::unique_ptr<Expr>>& argv) {
