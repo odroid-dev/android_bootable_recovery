@@ -86,7 +86,7 @@ typedef struct chunk_header {
 #define SPARSE_HEADER_MAJOR_VER 1
 #include <sys/statvfs.h>
 static int do_unsparse(int fd, unsigned char *source,
-        unsigned int sector)
+        u64 sector)
 {
     sparse_header_t *header = (sparse_header_t *) source;
     u32 i;
@@ -98,6 +98,9 @@ static int do_unsparse(int fd, unsigned char *source,
 
     ioctl(fd, BLKGETSIZE, &blocks);
     ioctl(fd, BLKSSZGET, &blk_sz);
+
+    // aligned type size
+    blk_sz = 0x00000000FFFFFFFF & blk_sz;
 
     section_size = blocks * blk_sz;
 
@@ -172,7 +175,7 @@ static int do_unsparse(int fd, unsigned char *source,
 
                 lseek64(fd, (off64_t)sector * blk_sz, SEEK_SET);
                 if ((u64)write(fd, source, (size_t)clen) != clen) {
-                    printf("sparse: block write to sector %d"
+                    printf("sparse: block write to sector %llu"
                             " of %llu bytes (%llu blkcnt) failed\n",
                             sector, clen, blkcnt);
                     return 1;
